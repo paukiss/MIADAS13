@@ -18,12 +18,12 @@ Construir un **pipeline reproducible y escalable** para el forecast de ingresos 
 
 1. Genere una **serie temporal mensual de ingresos** (`monthly_revenue`). - OK
 2. Implemente un **split temporal** (train/val, backtest, test final). - 
-3. Aplique **limpieza, transformación y creación de features** (≥ 100 features candidatas).
+3. Aplique **limpieza, transformación y creación de features** (≥ 100 features candidatas). - Luis
 4. Implemente al menos un **baseline (Naive - ya existe)** y un **primer modelo de regresión**.
-5. Aplique alguna técnica de **selección / reducción de variables**.
-6. Calcule **métricas técnicas** y las traduzca en **KPIs de negocio**.
-7. Permita **simular la llegada mensual de nuevos datos** (pipeline corrible cada mes).
-8. Esté bien documentado (flujo de datos, decisiones y resultados).
+5. Aplique alguna técnica de **selección / reducción de variables**. - TODOS
+6. Calcule **métricas técnicas** y las traduzca en **KPIs de negocio**. - Felipe 
+7. Permita **simular la llegada mensual de nuevos datos** (pipeline corrible cada mes). - Sergio
+8. Esté bien documentado (flujo de datos, decisiones y resultados). - TODOS
 
 ---
 
