@@ -1,0 +1,53 @@
+# ============================
+# PYTHON
+# ============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+*.pickle
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+
+# ============================
+# JUPYTER NOTEBOOKS
+# ============================
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# ============================
+# DATA (PESADA / INTERMEDIA)
+# ============================
+# CSV, Excel, modelos o datos que no deben subir
+data/**/*.csv
+data/**/*.xlsx
+data/**/interim/
+notebook/data/**/interim/
+
+# Si quieres permitir solo algunos archivos, bórralos de aquí.
+
+# ============================
+# SYSTEM FILES
+# ============================
+.DS_Store
+Thumbs.db
+
+# ============================
+# PDF / TEMPORAL FILES
+# ============================
+*.pdf
+*.tmp
+
+# ============================
+# MISC
+# ============================
+*.bak
+*.swp
+*.swo
