@@ -1,0 +1,70 @@
+mode: "monthly" # Options: "monthly", "daily"
+
+project:
+  name: "Forecast de Ingresos (Grupo 10)"
+  dataset: "Olist Brazilian E-Commerce"
+  horizon: 1
+
+data:
+  base_url: "https://raw.githubusercontent.com/paukiss/MIADAS13/refs/heads/main/data/dataset/"
+  cache_dir: "data/raw"
+
+features:
+  add_seasonality: true
+  add_trend: true
+
+modeling:
+  random_seed: 42
+  cv_splits: 4
+  primary_metric: "MAPE"
+  candidates:
+    - "ridge"
+    - "random_forest"
+    - "gradient_boosting"
+  
+  export_path: "models/final/model.pkl"
+  export_metadata_path: "models/final/metadata.json"
+  feature_importance_fig: "reports/figures/feature_importance.png"
+  performance_fig: "reports/figures/backtest_performance.png"
+  metrics_csv: "reports/metrics/metrics_summary.csv"
+
+modes:
+  monthly:
+    data:
+      master_table_path: "data/processed/master_table.csv"
+      index_col: "month"
+    features:
+      base_cols:
+        - monthly_revenue
+        - total_orders
+        - avg_review_score
+        - total_items
+        - total_freight
+        - unique_customers
+        - avg_installments
+      lags: [1, 2, 3, 6]
+      rolling_windows: [3, 6]
+      target_col: "monthly_revenue_next"
+    modeling:
+      test_size: 3 # May, Jun, Jul
+      train_cutoff_date: "2018-04-01"
+
+  daily:
+    data:
+      master_table_path: "data/processed/master_table_daily.csv"
+      index_col: "date"
+    features:
+      base_cols:
+        - daily_revenue
+        - total_orders
+        - avg_review_score
+        - total_items
+        - total_freight
+        - unique_customers
+        - avg_installments
+      lags: [1, 7, 14, 30]
+      rolling_windows: [7, 30]
+      target_col: "daily_revenue_next"
+    modeling:
+      test_size: 92 # May(31)+Jun(30)+Jul(31) = 92
+      train_cutoff_date: "2018-04-30"
