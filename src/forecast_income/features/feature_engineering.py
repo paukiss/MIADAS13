@@ -125,12 +125,8 @@ def make_supervised_monthly(master: pd.DataFrame, cfg: FeatureConfig) -> Tuple[p
     df, feats = create_features(master, cfg, date_col="month")
     
     # Target 1 mes adelante
-    # Asumimos que el target es el revenue del mes siguiente
     df[cfg.target_col] = df["monthly_revenue"].shift(-1)
     
-    # Limpiar NaNs generados por lags y rolling
-    # Lags llegan hasta 6. Rolling hasta 6.
-    # Shift(-1) genera un NaN al final.
     supervised = df.dropna(subset=feats + [cfg.target_col]).reset_index(drop=True)
     
     X = supervised[feats]
