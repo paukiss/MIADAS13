@@ -62,7 +62,7 @@ def select_features(X_train: pd.DataFrame, y_train: pd.Series, random_state: int
         step=1,
         cv=tscv,
         scoring="neg_mean_absolute_percentage_error",
-        min_features_to_select=5, # Al menos quedarnos con algo
+        min_features_to_select=12, # Aumentado para asegurar más contexto
         n_jobs=-1
     )
     
