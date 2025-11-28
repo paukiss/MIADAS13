@@ -78,59 +78,11 @@ def _save_plots(X: pd.DataFrame, y: pd.Series, output_dir: str):
     plt.savefig(f"{output_dir}/correlation_matrix.png")
     plt.close()
 
-def tune_and_select(params_path: str = "config/params.yaml") -> Dict[str, Any]:
-    params = load_config(params_path)
-
-    master = _load_master(params["data"]["master_table_path"])
-
-    cfg = FeatureConfig(
-        base_cols=params["features"]["base_cols"],
-        lags=params["features"]["lags"],
-        rolling_windows=params["features"]["rolling_windows"],
-        add_seasonality=params["features"]["add_seasonality"],
-        add_trend=params["features"]["add_trend"],
-        target_col=params["features"]["target_col"],
-    )
-
-    if "daily" in params["data"]["master_table_path"]:
-        X, y, feature_names, dates = make_supervised_daily(master, cfg)
-        test_size = params["modeling"].get("test_size", 180) # Used for internal validation split
-    else:
-        X, y, feature_names, dates = make_supervised_monthly(master, cfg)
-        test_size = params["modeling"].get("test_size", 6) # Used for internal validation split
-
-    # --- Guardar Features Generadas para Inspección ---
-    features_path = Path("data/processed/features_generated.csv")
-    # Unimos X con y y dates para tener el dataset completo
-    full_dataset = X.copy()
-    full_dataset["target"] = y
-    full_dataset["date_index"] = dates
-    full_dataset.to_csv(features_path, index=False)
-    LOGGER.info(f"Features generadas ({X.shape[1]} columnas) guardadas en {features_path}")
-    # ------------------------------------------------
-
-    # Filter Train + Validation period (cutoff)
-    cutoff = params["modeling"].get("train_cutoff_date")
-    if cutoff:
-        LOGGER.info(f"Filtrando datos de entrenamiento hasta {cutoff}")
-        mask = dates <= cutoff
-        X = X[mask]
-        y = y[mask]
-        dates = dates[mask]
-
-    print('yoss', test_size)
-    X_train, X_test, y_train, y_test = _split_train_test(X, y, test_size)
-
-    # --- Feature Selection ---
-    LOGGER.info("Ejecutando pipeline de selección de características...")
-    X_train, selected_cols = select_features(X_train, y_train, random_state=params["modeling"]["random_seed"])
-    X_test = X_test[selected_cols]
-    LOGGER.info(f"Features finales para entrenamiento: {len(selected_cols)}")
-    
-    # Guardar gráficos de justificación
-    _save_plots(X_train, y_train, "reports/figures")
-    # -------------------------
-
+def perform_tuning(X_train, y_train, X_test, y_test, params):
+    """
+    Ejecuta el GridSearch para los candidatos definidos y evalúa en test.
+    Retorna (results_list, best_model_info)
+    """
     results: List[Dict[str, Any]] = []
 
     # Baselines (sin features, solo y)
@@ -196,6 +148,73 @@ def tune_and_select(params_path: str = "config/params.yaml") -> Dict[str, Any]:
                 "best_params": search.best_params_,
                 "cv_best_score_neg_mape": float(search.best_score_),
             }
+            
+    return results, {
+        "best_model_name": best_model_name,
+        "best_estimator": best_estimator,
+        "best_mape": best_mape,
+        "best_meta": best_meta
+    }
+
+def tune_and_select(params_path: str = "config/params.yaml") -> Dict[str, Any]:
+    params = load_config(params_path)
+
+    master = _load_master(params["data"]["master_table_path"])
+
+    cfg = FeatureConfig(
+        base_cols=params["features"]["base_cols"],
+        lags=params["features"]["lags"],
+        rolling_windows=params["features"]["rolling_windows"],
+        add_seasonality=params["features"]["add_seasonality"],
+        add_trend=params["features"]["add_trend"],
+        target_col=params["features"]["target_col"],
+    )
+
+    if "daily" in params["data"]["master_table_path"]:
+        X, y, feature_names, dates = make_supervised_daily(master, cfg)
+        test_size = params["modeling"].get("test_size", 180) # Used for internal validation split
+    else:
+        X, y, feature_names, dates = make_supervised_monthly(master, cfg)
+        test_size = params["modeling"].get("test_size", 6) # Used for internal validation split
+
+    # --- Guardar Features Generadas para Inspección ---
+    features_path = Path("data/processed/features_generated.csv")
+    # Unimos X con y y dates para tener el dataset completo
+    full_dataset = X.copy()
+    full_dataset["target"] = y
+    full_dataset["date_index"] = dates
+    full_dataset.to_csv(features_path, index=False)
+    LOGGER.info(f"Features generadas ({X.shape[1]} columnas) guardadas en {features_path}")
+    # ------------------------------------------------
+
+    # Filter Train + Validation period (cutoff)
+    cutoff = params["modeling"].get("train_cutoff_date")
+    if cutoff:
+        LOGGER.info(f"Filtrando datos de entrenamiento hasta {cutoff}")
+        mask = dates <= cutoff
+        X = X[mask]
+        y = y[mask]
+        dates = dates[mask]
+
+    print('yoss', test_size)
+    X_train, X_test, y_train, y_test = _split_train_test(X, y, test_size)
+
+    # --- Feature Selection ---
+    LOGGER.info("Ejecutando pipeline de selección de características...")
+    X_train, selected_cols = select_features(X_train, y_train, random_state=params["modeling"]["random_seed"])
+    X_test = X_test[selected_cols]
+    LOGGER.info(f"Features finales para entrenamiento: {len(selected_cols)}")
+    
+    # Guardar gráficos de justificación
+    _save_plots(X_train, y_train, "reports/figures")
+    # -------------------------
+
+    results, best_info = perform_tuning(X_train, y_train, X_test, y_test, params)
+    
+    best_estimator = best_info["best_estimator"]
+    best_model_name = best_info["best_model_name"]
+    best_mape = best_info["best_mape"]
+    best_meta = best_info["best_meta"]
 
     # Export best estimator
     if best_estimator is None:
