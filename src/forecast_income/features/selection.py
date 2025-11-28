@@ -33,16 +33,16 @@ def select_features(X_train: pd.DataFrame, y_train: pd.Series, random_state: int
     X_train = X_train[cols_variance]
     LOGGER.info(f"Features tras VarianceThreshold: {X_train.shape[1]}")
     
-    # 2. Correlación > 0.90
+    # 2. Correlación > 0.70 (Muy estricto para garantizar independencia)
     # Calculamos matriz de correlación absoluta
     corr_matrix = X_train.corr().abs()
     # Seleccionamos triángulo superior
     upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-    # Buscamos columnas con correlación > 0.90
-    to_drop = [column for column in upper.columns if any(upper[column] > 0.90)]
+    # Buscamos columnas con correlación > 0.70
+    to_drop = [column for column in upper.columns if any(upper[column] > 0.70)]
     
     X_train = X_train.drop(columns=to_drop)
-    LOGGER.info(f"Features tras filtro correlación (>0.90): {X_train.shape[1]}")
+    LOGGER.info(f"Features tras filtro correlación (>0.70): {X_train.shape[1]}")
     LOGGER.info(f"Columnas eliminadas por correlación: {len(to_drop)}")
     
     # 3. RFECV

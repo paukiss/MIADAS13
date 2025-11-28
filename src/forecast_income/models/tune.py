@@ -46,6 +46,38 @@ def _score(y_true, y_pred) -> Dict[str, float]:
         "Bias": bias(y_true, y_pred),
     }
 
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def _save_plots(X: pd.DataFrame, y: pd.Series, output_dir: str):
+    """Genera y guarda gráficos de importancia y correlación de las features seleccionadas."""
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    
+    # 1. Feature Importance (usando RF genérico para comparabilidad)
+    from sklearn.ensemble import RandomForestRegressor
+    rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+    rf.fit(X, y)
+    
+    importances = pd.DataFrame({
+        "feature": X.columns,
+        "importance": rf.feature_importances_
+    }).sort_values("importance", ascending=False)
+    
+    plt.figure(figsize=(10, 8))
+    sns.barplot(data=importances.head(20), x="importance", y="feature", palette="viridis")
+    plt.title("Feature Importance (Variables Seleccionadas)")
+    plt.tight_layout()
+    plt.savefig(f"{output_dir}/feature_importance.png")
+    plt.close()
+    
+    # 2. Correlation Matrix
+    plt.figure(figsize=(12, 10))
+    sns.heatmap(X.corr(), annot=False, cmap="coolwarm", vmin=-1, vmax=1)
+    plt.title("Matriz de Correlación (Variables Seleccionadas)")
+    plt.tight_layout()
+    plt.savefig(f"{output_dir}/correlation_matrix.png")
+    plt.close()
+
 def tune_and_select(params_path: str = "config/params.yaml") -> Dict[str, Any]:
     params = load_config(params_path)
 
@@ -67,6 +99,16 @@ def tune_and_select(params_path: str = "config/params.yaml") -> Dict[str, Any]:
         X, y, feature_names, dates = make_supervised_monthly(master, cfg)
         test_size = params["modeling"].get("test_size", 6) # Used for internal validation split
 
+    # --- Guardar Features Generadas para Inspección ---
+    features_path = Path("data/processed/features_generated.csv")
+    # Unimos X con y y dates para tener el dataset completo
+    full_dataset = X.copy()
+    full_dataset["target"] = y
+    full_dataset["date_index"] = dates
+    full_dataset.to_csv(features_path, index=False)
+    LOGGER.info(f"Features generadas ({X.shape[1]} columnas) guardadas en {features_path}")
+    # ------------------------------------------------
+
     # Filter Train + Validation period (cutoff)
     cutoff = params["modeling"].get("train_cutoff_date")
     if cutoff:
@@ -76,6 +118,7 @@ def tune_and_select(params_path: str = "config/params.yaml") -> Dict[str, Any]:
         y = y[mask]
         dates = dates[mask]
 
+    print('yoss', test_size)
     X_train, X_test, y_train, y_test = _split_train_test(X, y, test_size)
 
     # --- Feature Selection ---
@@ -83,6 +126,9 @@ def tune_and_select(params_path: str = "config/params.yaml") -> Dict[str, Any]:
     X_train, selected_cols = select_features(X_train, y_train, random_state=params["modeling"]["random_seed"])
     X_test = X_test[selected_cols]
     LOGGER.info(f"Features finales para entrenamiento: {len(selected_cols)}")
+    
+    # Guardar gráficos de justificación
+    _save_plots(X_train, y_train, "reports/figures")
     # -------------------------
 
     results: List[Dict[str, Any]] = []
@@ -135,6 +181,10 @@ def tune_and_select(params_path: str = "config/params.yaml") -> Dict[str, Any]:
         best = search.best_estimator_
         preds = best.predict(X_test)
         sc = _score(y_test, preds)
+        
+        LOGGER.info(f"   ✅ Resultado {name}: MAPE Test={sc['MAPE']:.2f}% | CV Score (Mean MAPE)={-search.best_score_:.2f}%")
+        LOGGER.info(f"   ℹ️ Mejores Parámetros: {search.best_params_}")
+
         sc_row = {"model": name, "best_params": search.best_params_, **sc}
         results.append(sc_row)
 
