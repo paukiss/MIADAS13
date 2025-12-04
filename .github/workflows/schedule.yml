@@ -1,0 +1,10 @@
+# Ejemplo conceptual (no implementado)
+on:
+  schedule:
+    - cron: '0 0 1 * *' # Ejecutar el día 1 de cada mes
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: bash scripts/run_all.sh
