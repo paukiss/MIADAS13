@@ -5,15 +5,19 @@ from pathlib import Path
 from typing import Dict, Any
 
 import joblib
+import numpy as np
 import pandas as pd
 import yaml
 
 from forecast_income.features.feature_engineering import FeatureConfig, make_supervised_monthly
 from forecast_income.utils.config import load_config
 
-def predict_next_month(params_path: str = "config/params.yaml") -> Dict[str, Any]:
+def predict_next_month(params_path: str = "config/params.yaml", cutoff_date: str = None) -> Dict[str, Any]:
     params = load_config(params_path)
     master = pd.read_csv(params["data"]["master_table_path"], parse_dates=[params["data"]["index_col"]]).sort_values(params["data"]["index_col"]).reset_index(drop=True)
+
+    if cutoff_date:
+        master = master[master[params["data"]["index_col"]] <= cutoff_date].reset_index(drop=True)
 
     cfg = FeatureConfig(
         base_cols=params["features"]["base_cols"],
@@ -33,10 +37,17 @@ def predict_next_month(params_path: str = "config/params.yaml") -> Dict[str, Any
         if selected_features_path.exists():
             selected_cols = json.loads(selected_features_path.read_text(encoding="utf-8"))
             
+        # Load metadata to check for transforms
+        metadata_path = Path(params["modeling"]["export_metadata_path"])
+        target_transform = None
+        if metadata_path.exists():
+            meta = json.loads(metadata_path.read_text(encoding="utf-8"))
+            target_transform = meta.get("target_transform")
+
         model = joblib.load(params["modeling"]["export_path"])
         
-        # Recursive prediction for next 30 days
-        days_to_predict = 30
+        # Recursive prediction for next 31 days (August)
+        days_to_predict = 31
         current_df = master.copy()
         future_revenue = 0
         
@@ -72,10 +83,16 @@ def predict_next_month(params_path: str = "config/params.yaml") -> Dict[str, Any
             
             current_df = pd.concat([current_df, new_row], ignore_index=True)
             
+        # Extract the predicted portion
+        predicted_df = current_df.iloc[-days_to_predict:][[date_col, "daily_revenue"]].copy()
+        predicted_df[date_col] = predicted_df[date_col].dt.strftime('%Y-%m-%d')
+        daily_predictions = predicted_df.to_dict(orient="records")
+
         return {
             "last_observed_date": master[date_col].iloc[-1].isoformat(),
             "predicted_days": days_to_predict,
-            "prediction_next_30_days_revenue": future_revenue
+            "prediction_next_30_days_revenue": future_revenue,
+            "daily_predictions": daily_predictions
         }
 
     else:

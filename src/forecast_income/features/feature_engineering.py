@@ -28,7 +28,32 @@ def create_features(df: pd.DataFrame, cfg: FeatureConfig, date_col: str = "month
     
     # 1. Transformaciones por columna base
     new_features = []
-    for col in cfg.base_cols:
+    
+    # --- Interaction Features (Ratios) ---
+    # Calculate these BEFORE lags so they get lagged too if added to base_cols
+    # But here we just add them as static features or lag them manually?
+    # Better to add them to df first, then let the loop handle them if they are in base_cols.
+    # However, base_cols is fixed in config. Let's add specific interaction features here.
+    
+    if "daily_revenue" in df.columns and "total_orders" in df.columns:
+        # Avoid division by zero
+        df["revenue_per_order"] = df["daily_revenue"] / df["total_orders"].replace(0, 1)
+        # If orders was 0, revenue is likely 0, so ratio is 0.
+        
+    if "total_items" in df.columns and "total_orders" in df.columns:
+        df["items_per_order"] = df["total_items"] / df["total_orders"].replace(0, 1)
+        
+    if "total_freight" in df.columns and "daily_revenue" in df.columns:
+        df["freight_ratio"] = df["total_freight"] / df["daily_revenue"].replace(0, 1)
+
+    # Add these new cols to base_cols dynamically for this run? 
+    # Or just process them manually. Let's process them manually for lags/rolling to ensure they are useful.
+    interaction_cols = ["revenue_per_order", "items_per_order", "freight_ratio"]
+    cols_to_process = cfg.base_cols + [c for c in interaction_cols if c in df.columns]
+    # Remove duplicates
+    cols_to_process = list(set(cols_to_process))
+
+    for col in cols_to_process:
         if col not in df.columns:
             continue
             
@@ -62,6 +87,11 @@ def create_features(df: pd.DataFrame, cfg: FeatureConfig, date_col: str = "month
             feat_max = f"{col}_roll_max_{window}"
             new_features.append(shifted.rolling(window=window, min_periods=1).max().rename(feat_max))
             generated_feats.append(feat_max)
+            
+            # Exponential Moving Average (EMA) - New
+            feat_ema = f"{col}_ema_{window}"
+            new_features.append(shifted.ewm(span=window, adjust=False).mean().rename(feat_ema))
+            generated_feats.append(feat_ema)
             
         # Delta (pct_change) - Lag 1
         feat_delta = f"{col}_pct_change"
@@ -97,6 +127,20 @@ def create_features(df: pd.DataFrame, cfg: FeatureConfig, date_col: str = "month
             dow_feat = df[date_col].dt.dayofweek.rename("day_of_week")
             time_feats.append(dow_feat)
             generated_feats.append("day_of_week")
+            
+            # Is Weekend (Saturday=5, Sunday=6)
+            is_weekend = (df[date_col].dt.dayofweek >= 5).astype(int).rename("is_weekend")
+            time_feats.append(is_weekend)
+            generated_feats.append("is_weekend")
+            
+            # Payday effects (Start/End of month)
+            is_month_start = df[date_col].dt.is_month_start.astype(int).rename("is_month_start")
+            time_feats.append(is_month_start)
+            generated_feats.append("is_month_start")
+            
+            is_month_end = df[date_col].dt.is_month_end.astype(int).rename("is_month_end")
+            time_feats.append(is_month_end)
+            generated_feats.append("is_month_end")
             
             dom_feat = df[date_col].dt.day.rename("day_of_month")
             time_feats.append(dom_feat)

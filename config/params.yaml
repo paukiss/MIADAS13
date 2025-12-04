@@ -21,6 +21,7 @@ modeling:
     - "ridge"
     - "random_forest"
     - "gradient_boosting"
+    - "hist_gradient_boosting"
   
   export_path: "models/final/model.pkl"
   export_metadata_path: "models/final/metadata.json"
@@ -62,9 +63,17 @@ modes:
         - total_freight
         - unique_customers
         - avg_installments
-      lags: [1, 7, 14, 30]
-      rolling_windows: [7, 30]
+      lags: [1, 7, 14, 21, 28, 30]
+      rolling_windows: [7, 14, 28, 30]
       target_col: "daily_revenue_next"
     modeling:
-      test_size: 92 # May(31)+Jun(30)+Jul(31) = 92
-      train_cutoff_date: "2018-04-30"
+      # Timeline Configuration
+      # Train: Start to 2018-04-30
+      # Backtest (Validation): 2018-05-01 to 2018-07-31 (92 days)
+      # Predict: 2018-08-01 onwards
+      train_end_date: "2018-04-30"
+      backtest_start_date: "2018-05-01"
+      backtest_end_date: "2018-07-31"
+      prediction_start_date: "2018-08-01"
+      train_cutoff_date: "2018-04-30" # Used for initial training split
+      test_size: 92 # Days to reserve for Backtest (May, Jun, Jul)

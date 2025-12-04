@@ -112,9 +112,9 @@ def build_master_table_monthly(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     df_monthly = df_monthly.sort_values("month").reset_index(drop=True)
     
     # Filtrar meses incompletos/vacíos al final
-    # El dataset tiene datos hasta agosto 2018, pero agosto está incompleto (hasta el 22).
-    # Para un modelo mensual robusto, mejor cortar en Julio 2018.
-    df_monthly = df_monthly[df_monthly["month"] < "2018-08-01"].copy()
+    # El dataset tiene datos hasta agosto 2018.
+    # Incluimos agosto para validación final.
+    df_monthly = df_monthly[df_monthly["month"] < "2018-09-01"].copy()
     
     df_monthly["year"] = df_monthly["month"].dt.year
     df_monthly["month_num"] = df_monthly["month"].dt.month

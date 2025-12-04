@@ -48,34 +48,31 @@ def select_features(X_train: pd.DataFrame, y_train: pd.Series, random_state: int
     # 3. RFECV
     # Usamos RandomForestRegressor como estimador base
     rf = RandomForestRegressor(n_estimators=100, random_state=random_state, n_jobs=-1)
-    # TimeSeriesSplit para validación cruzada (respetando orden temporal)
-    # n_splits=3 como solicitado. Si hay pocos datos, esto puede fallar o ser muy pequeño.
-    # Ajustamos min_splits si es necesario, pero intentamos 3.
-    n_splits = 3
-    if len(X_train) < 5: # Muy pocos datos para 3 splits
-        n_splits = 2
+    
+    LOGGER.info("Ejecutando RFECV (Recursive Feature Elimination)... esto puede tardar.")
+    tscv = TimeSeriesSplit(n_splits=2)
+    # min_features_to_select=10 para asegurar que no nos quedamos sin nada
+    # step=5 para acelerar el proceso
+    selector = RFECV(estimator=rf, step=5, cv=tscv, scoring="neg_mean_absolute_percentage_error", n_jobs=-1, min_features_to_select=10)
+    selector.fit(X_train, y_train)
+    
+    selected_cols = X_train.columns[selector.support_].tolist()
+    
+    # Force max 20 features if RFECV selected more
+    if len(selected_cols) > 20:
+        LOGGER.info(f"RFECV seleccionó {len(selected_cols)} features. Limitando a las Top 20.")
+        # Re-fit to get feature importances on the selected subset
+        rf_temp = RandomForestRegressor(n_estimators=100, random_state=random_state, n_jobs=-1)
+        rf_temp.fit(X_train[selected_cols], y_train)
         
-    tscv = TimeSeriesSplit(n_splits=n_splits)
-    
-    rfecv = RFECV(
-        estimator=rf,
-        step=1,
-        cv=tscv,
-        scoring="neg_mean_absolute_percentage_error",
-        min_features_to_select=12, # Aumentado para asegurar más contexto
-        n_jobs=-1
-    )
-    
-    rfecv.fit(X_train, y_train)
-    
-    selected_cols = X_train.columns[rfecv.support_].tolist()
+        importances_temp = pd.Series(rf_temp.feature_importances_, index=selected_cols).sort_values(ascending=False)
+        selected_cols = importances_temp.head(20).index.tolist()
+        
     X_train_selected = X_train[selected_cols]
     
-    LOGGER.info(f"Features tras RFECV: {len(selected_cols)}")
+    LOGGER.info(f"Features seleccionadas finales: {len(selected_cols)}")
     
     # Ranking de importancia (solo de las seleccionadas)
-    # RFECV no tiene feature_importances_ directo del mejor modelo re-entrenado en todo X_train,
-    # pero podemos ajustar un RF final en las features seleccionadas para ver importancia.
     rf_final = RandomForestRegressor(n_estimators=100, random_state=random_state, n_jobs=-1)
     rf_final.fit(X_train_selected, y_train)
     
