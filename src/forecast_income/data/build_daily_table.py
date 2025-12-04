@@ -79,13 +79,14 @@ def build_master_table_daily(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     df_daily = df_daily.sort_values("date").reset_index(drop=True)
     
     # Filtrar datos posteriores a 2018-08-22 debido a incompletitud/caída drástica en el dataset original
-    # Esto asegura que el modelo entrene y prediga sobre un estado "saludable" del negocio.
-    df_daily = df_daily[df_daily["date"] <= "2018-08-22"].copy()
+    # Y filtrar datos anteriores a 2017-01-01 para evitar el periodo sparse de 2016 (muchos ceros).
+    df_daily = df_daily[(df_daily["date"] >= "2017-01-01") & (df_daily["date"] <= "2018-08-22")].copy()
     
     # Rellenar días faltantes (si no hubo ventas en un día, debería aparecer con 0)
     # Creamos un rango completo de fechas
-    full_idx = pd.date_range(start=df_daily["date"].min(), end=df_daily["date"].max(), freq="D")
-    df_daily = df_daily.set_index("date").reindex(full_idx).reset_index().rename(columns={"index": "date"})
+    if not df_daily.empty:
+        full_idx = pd.date_range(start=df_daily["date"].min(), end=df_daily["date"].max(), freq="D")
+        df_daily = df_daily.set_index("date").reindex(full_idx).reset_index().rename(columns={"index": "date"})
     
     # Rellenar NaNs con 0 para métricas de volumen
     fill_zeros = ["daily_revenue", "total_orders", "total_items", "total_freight", "unique_customers"]

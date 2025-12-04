@@ -121,9 +121,34 @@ def run_backtest_and_reports(params_path: str = "config/params.yaml") -> Dict[st
 
     if is_daily:
         X, y, feature_names, dates = make_supervised_daily(master, cfg)
-        # Default test days for daily: 180
-        test_len = params["modeling"].get("test_size", 180)
-        start = max(30, len(X) - test_len)
+        
+        # Check for explicit backtest dates
+        backtest_start = params["modeling"].get("backtest_start_date")
+        backtest_end = params["modeling"].get("backtest_end_date")
+        
+        if backtest_start and backtest_end:
+            # Ensure dates are datetime for comparison
+            dates = pd.to_datetime(dates)
+            backtest_start = pd.to_datetime(backtest_start)
+            backtest_end = pd.to_datetime(backtest_end)
+            
+            # Filter data to end at backtest_end
+            keep_mask = dates <= backtest_end
+            X = X[keep_mask].reset_index(drop=True)
+            y = y[keep_mask].reset_index(drop=True)
+            dates = dates[keep_mask].reset_index(drop=True)
+            
+            # Find start index
+            start_mask = dates >= backtest_start
+            if not start_mask.any():
+                 raise ValueError(f"Backtest start date {backtest_start} not found in data range {dates.min()} - {dates.max()}")
+            start = start_mask.idxmax()
+            
+            LOGGER.info(f"Backtest configured: {backtest_start.date()} to {backtest_end.date()}. Start index: {start}, Total rows: {len(X)}")
+        else:
+            # Default test days for daily: 180
+            test_len = params["modeling"].get("test_size", 180)
+            start = max(30, len(X) - test_len)
     else:
         X, y, feature_names, dates = make_supervised_monthly(master, cfg)
         # Default test months for monthly: 6
@@ -203,8 +228,14 @@ def run_backtest_and_reports(params_path: str = "config/params.yaml") -> Dict[st
         bt["month"] = bt["date"].dt.to_period("M")
         monthly_bt = bt.groupby("month")[["y_true", "y_pred"]].sum().reset_index()
         monthly_bt["month"] = monthly_bt["month"].dt.to_timestamp()
-        # Recompute metrics on monthly aggregates
-        metrics = _compute_metrics(monthly_bt["y_true"], monthly_bt["y_pred"])
+        
+        # Compute monthly metrics
+        monthly_metrics = _compute_metrics(monthly_bt["y_true"], monthly_bt["y_pred"])
+        
+        # Add to main metrics with prefix
+        for k, v in monthly_metrics.items():
+            metrics[f"Monthly_{k}"] = v
+            
         # Use monthly_bt for plotting
         plot_bt = monthly_bt
     else:
@@ -229,103 +260,6 @@ def run_backtest_and_reports(params_path: str = "config/params.yaml") -> Dict[st
         "metrics": metrics,
     }
 
-    master = _load_master(params["data"]["master_table_path"])
-    cfg = FeatureConfig(
-        base_cols=params["features"]["base_cols"],
-        lags=params["features"]["lags"],
-        rolling_windows=params["features"]["rolling_windows"],
-        add_seasonality=params["features"]["add_seasonality"],
-        add_trend=params["features"]["add_trend"],
-        target_col=params["features"]["target_col"],
-    )
-
-    if "daily" in params["data"]["master_table_path"]:
-        X, y, feature_names, dates = make_supervised_daily(master, cfg)
-        start = max(30, len(X) - params["modeling"].get("test_days", 180))
-    else:
-        X, y, feature_names, dates = make_supervised_monthly(master, cfg)
-        start = max(6, len(X) - params["modeling"].get("test_months", 6))
-
-    # Load selected features
-    selected_features_path = Path(params["modeling"]["export_path"]).parent / "selected_features.json"
-    if selected_features_path.exists():
-        selected_cols = json.loads(selected_features_path.read_text(encoding="utf-8"))
-        X = X[selected_cols]
-        feature_names = selected_cols
-    else:
-        LOGGER.warning("No se encontró selected_features.json, usando todas las features.")
-
-    model = _load_model(params["modeling"]["export_path"])
-    
-    bt, metrics = _backtest_expanding(model, X, y, dates, start=start)
-
-    # If daily, aggregate to monthly for reporting
-    if "daily" in params["data"]["master_table_path"]:
-        bt["month"] = pd.to_datetime(bt["date"]).dt.to_period("M").dt.to_timestamp()
-        bt_monthly = bt.groupby("month", as_index=False).agg({
-            "y_true": "sum",
-            "y_pred": "sum"
-        })
-        metrics = _compute_metrics(bt_monthly["y_true"], bt_monthly["y_pred"])
-        _plot_performance(bt_monthly, params["modeling"]["performance_fig"])
-    else:
-        _plot_performance(bt, params["modeling"]["performance_fig"])
-
-    # save artifacts
-    bt_path = Path("reports/metrics/backtest_predictions.csv")
-    bt_path.parent.mkdir(parents=True, exist_ok=True)
-    bt.to_csv(bt_path, index=False)
-
-    metrics_path = Path("reports/metrics/backtest_metrics.json")
-    metrics_path.write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    _plot_feature_importance(model, feature_names, params["modeling"]["feature_importance_fig"])
-
-    return {
-        "backtest_predictions_csv": str(bt_path),
-        "backtest_metrics_json": str(metrics_path),
-        "performance_fig": params["modeling"]["performance_fig"],
-        "feature_importance_fig": params["modeling"]["feature_importance_fig"],
-        "metrics": metrics,
-    }
-
-def _plot_performance(bt: pd.DataFrame, out_path: str) -> None:
-    plt.figure()
-    plt.plot(bt["y_true"].values, label="Real")
-    plt.plot(bt["y_pred"].values, label="Predicho")
-    plt.title("Backtest (expanding window): Real vs Predicho")
-    plt.xlabel("Paso de tiempo (meses en el backtest)")
-    plt.ylabel("Ingresos mensuales")
-    plt.legend()
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path, bbox_inches="tight")
-    plt.close()
-
-def _plot_feature_importance(model, feature_names: List[str], out_path: str) -> None:
-    import numpy as np
-
-    importance = None
-    name = model.__class__.__name__
-
-    # Pipeline (ridge)
-    if hasattr(model, "named_steps") and "model" in model.named_steps:
-        inner = model.named_steps["model"]
-        if hasattr(inner, "coef_"):
-            importance = np.abs(inner.coef_)
-            name = inner.__class__.__name__
-
-    if importance is None and hasattr(model, "feature_importances_"):
-        importance = model.feature_importances_
-
-    if importance is None:
-        LOGGER.info("No hay feature importance disponible para este modelo.")
-        return
-
-    imp = pd.Series(importance, index=feature_names).sort_values(ascending=False).head(20)
-
-    plt.figure()
-    plt.barh(imp.index[::-1], imp.values[::-1])
-    plt.title(f"Top 20 Feature Importance ({name})")
     plt.xlabel("Importancia (abs coef o impurity)")
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(out_path, bbox_inches="tight")
