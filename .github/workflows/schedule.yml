@@ -1,4 +1,3 @@
-# Ejemplo conceptual (no implementado)
 on:
   schedule:
     - cron: '0 0 1 * *' # Ejecutar el día 1 de cada mes
